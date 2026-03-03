@@ -13,6 +13,7 @@
 #include <wx/aboutdlg.h>
 #include <wx/config.h>
 
+#include <array>
 #include <format>
 
 #include <filesystem>
@@ -85,51 +86,60 @@ MainFrameDerived::MainFrameDerived() : MainFrame(NULL){
         long w = config.ReadLong(config_windowW.data(), -1);
         long h = config.ReadLong(config_windowH.data(), -1);
         if (w > 0 && h > 0) {
-            this->SetSize(w, h);
+            CallAfter([this, w, h]() {
+                this->SetSize(w, h);
+            });
         }
     }
 
-	//set up project list columns
-	{
-		string cols[] = {"Project Name","Unity Version","Last Modified","Path"};
-		for (const auto& str : cols){
-			projectsList->AppendColumn(str,wxLIST_FORMAT_LEFT);
-		}
-	}
-	//make the data folder if it does not already exist (with readwrite for all groups)
-	#if defined __APPLE__ || defined __linux__
-		int status = mkdir(datapath.c_str(),S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-		menuReveal->SetItemLabel("Reveal In Finder\tCtrl-F");
-	#elif defined _WIN32
-		int status = mkdir(datapath.string().c_str());
-		//on windows also make the main window background white
+    //set up project list columns
+    {
+        string cols[] = {"Project Name","Unity Version","Last Modified","Path"};
+        for (const auto& str : cols){
+            projectsList->AppendColumn(str,wxLIST_FORMAT_LEFT);
+        }
+    }
+    //make the data folder if it does not already exist (with readwrite for all groups)
+    #if defined __APPLE__ || defined __linux__
+        int status = mkdir(datapath.c_str(),S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+        menuReveal->SetItemLabel("Reveal In Finder\tCtrl-F");
+    #elif defined _WIN32
+        int status = mkdir(datapath.string().c_str());
+        //on windows also make the main window background white
         if (!wxSystemSettings::GetAppearance().IsDark()) {
             this->SetBackgroundColour(*wxWHITE);
         }
-		//high DPI scaling fixes
-		dpi_scale(this);
-		//set reveal label
-		menuReveal->SetItemLabel("Reveal In File Explorer\tCtrl-F");
-	#endif
-	if (status != 0){
-		ReloadData();
-	}
+        //high DPI scaling fixes
+        dpi_scale(this);
+        //set reveal label
+        menuReveal->SetItemLabel("Reveal In File Explorer\tCtrl-F");
+    #endif
+    if (status != 0){
+        ReloadData();
+    }
 
-	// Restore saved column widths (overrides auto-sizing done during data load)
-	for (int j = 0; j < 4; j++) {
-		auto key = std::format("colWidth{}", j);
-		long savedWidth = config.ReadLong(key.c_str(), -1);
-		if (savedWidth > 0) {
-			projectsList->SetColumnWidth(j, savedWidth);
-		}
-	}
+    // Restore saved column widths (overrides auto-sizing done during data load)
+    {
+        std::array<long, 4> savedWidths;
+        for (int j = 0; j < 4; j++) {
+            auto key = std::format("colWidth{}", j);
+            savedWidths[j] = config.ReadLong(key.c_str(), -1);
+        }
+        CallAfter([this, savedWidths]() {
+            for (int j = 0; j < 4; j++) {
+                if (savedWidths[j] > 0) {
+                    projectsList->SetColumnWidth(j, savedWidths[j]);
+                }
+            }
+        });
+    }
 
-	//if no projects to load, the interface will be blank
+    //if no projects to load, the interface will be blank
 
-	//show current version in titlebar
-	this->SetLabel(std::format("Unity Hub Native {}",AppVersion));
+    //show current version in titlebar
+    this->SetLabel(std::format("Unity Hub Native {}",AppVersion));
     projSearchCtrl->Bind(wxEVT_KEY_UP, &MainFrameDerived::Filter, this);
-	projSearchCtrl->SetFocus();
+    projSearchCtrl->SetFocus();
 }
 
 void MainFrameDerived::OnSelectProject(wxListEvent&){
@@ -185,41 +195,41 @@ void MainFrameDerived::OnQuit(wxCommandEvent&)
  Loads the data in the main view. If anything is currently loaded, it will be cleared and re-loaded
  */
 void MainFrameDerived::ReloadData(){
-	//clear any existing items
+    //clear any existing items
     {
         wxListEvent e;
         OnDeselectProject(e);
     }
-	projectsList->DeleteAllItems();
-	installsPathsList->Clear();
+    projectsList->DeleteAllItems();
+    installsPathsList->Clear();
     {
         wxCommandEvent e;
         OnSelectEditorPath(e);
     }
-	projects.clear();
-	installPaths.clear();
-	editors.clear();
-	
+    projects.clear();
+    installPaths.clear();
+    editors.clear();
+    
     LoadProjects("");
 
-	// Sort projects after loading (default: by name ascending)
-	SortProjects();
+    // Sort projects after loading (default: by name ascending)
+    SortProjects();
 
-	//check that the installs path file exists in the folder
-	auto p = datapath / editorPathsFile;
-	if (filesystem::exists(p)){
-		//load the editors
-		ifstream in; in.open(p); string line;
-		while (getline(in, line)){
-			LoadEditorPath(line);
-		}
-	}
-	else{
-		//add default data
+    //check that the installs path file exists in the folder
+    auto p = datapath / editorPathsFile;
+    if (filesystem::exists(p)){
+        //load the editors
+        ifstream in; in.open(p); string line;
+        while (getline(in, line)){
+            LoadEditorPath(line);
+        }
+    }
+    else{
+        //add default data
         for(const auto& path : defaultInstall){
             LoadEditorPath(path);
         }
-	}
+    }
 }
 
 // empty string for filter means no filter
@@ -283,24 +293,24 @@ void MainFrameDerived::Filter(wxKeyEvent &event){
 //definitions for the events
 void MainFrameDerived::OnAbout(wxCommandEvent& event)
 {
-	wxAboutDialogInfo aboutInfo;
-	aboutInfo.SetName("Unity Hub Native");	
-	aboutInfo.SetCopyright(std::format("(C) Ravbug 2019-{}",BUILD_YEAR));
-	aboutInfo.SetDescription("Developed with wxWidgets in C++");
+    wxAboutDialogInfo aboutInfo;
+    aboutInfo.SetName("Unity Hub Native");  
+    aboutInfo.SetCopyright(std::format("(C) Ravbug 2019-{}",BUILD_YEAR));
+    aboutInfo.SetDescription("Developed with wxWidgets in C++");
 #if defined __linux__
-	aboutInfo.SetWebSite("https://github.com/ravbug/UnityHubNative");
-	aboutInfo.AddDeveloper("Ravbug (github.com/ravbug)");
-	aboutInfo.SetIcon(wxIcon(wxICON(wxlin)));
-	aboutInfo.SetVersion(AppVersion.data());
+    aboutInfo.SetWebSite("https://github.com/ravbug/UnityHubNative");
+    aboutInfo.AddDeveloper("Ravbug (github.com/ravbug)");
+    aboutInfo.SetIcon(wxIcon(wxICON(wxlin)));
+    aboutInfo.SetVersion(AppVersion.data());
 #elif defined _WIN32
-	aboutInfo.SetVersion(AppVersion.data());
-	aboutInfo.SetIcon(wxIcon("IDI_WXWIN"));
+    aboutInfo.SetVersion(AppVersion.data());
+    aboutInfo.SetIcon(wxIcon("IDI_WXWIN"));
 #endif
-	wxAboutBox(aboutInfo);
+    wxAboutBox(aboutInfo);
 }
 
 void MainFrameDerived::OnAddProject(wxCommandEvent& event){
-	auto msg ="Select the folder(s) containing the Unity Project";
+    auto msg ="Select the folder(s) containing the Unity Project";
     
     wxDirDialog dlg(NULL, msg, "", wxDD_DEFAULT_STYLE | wxDD_DIR_MUST_EXIST | wxDD_MULTIPLE);
     if (dlg.ShowModal() == wxID_CANCEL) {
@@ -339,95 +349,95 @@ void MainFrameDerived::OnAddProject(wxCommandEvent& event){
  @discussion If the Learn tab is switched to, the app will load the web view if it is not loaded, or reset the unload timer. If the learn tab is switched away from, then the app will set a timer to unload the web view and save resources. The app saves in memory the currenlty loaded page so that it can be re-loaded when the view gets re-initialized
  */
 void MainFrameDerived::OnPageChanging(wxBookCtrlEvent& event){
-	// currently unused ...
+    // currently unused ...
 }
 /**
  Loads an editor search path into the app, updating the UI and the vector
  @param path the string path to laod
  */
 void MainFrameDerived::LoadEditorPath(const std::filesystem::path& path){
-	//add to internal structure and to file
+    //add to internal structure and to file
     if (std::find(installPaths.begin(),installPaths.end(),path) != installPaths.end()){
         return;
     }
-	installPaths.push_back(path);
-	SaveEditorVersions();
-	
-	//add to the UI
-	wxArrayString a;
-	a.Add(path.string());
-	
-	installsPathsList->Append(a);
+    installPaths.push_back(path);
+    SaveEditorVersions();
+    
+    //add to the UI
+    wxArrayString a;
+    a.Add(path.string());
+    
+    installsPathsList->Append(a);
 }
 
 void MainFrameDerived::OnRemoveInstallPath(wxCommandEvent& event){
-	int itemIndex = installsPathsList->GetSelection();
-	if (itemIndex != wxNOT_FOUND){
-		// Got the selected item index
-		//remove it from the vector
-		installPaths.erase(installPaths.begin()+itemIndex);
-		
-		//update the UI
-		installsPathsList->Delete(itemIndex);
+    int itemIndex = installsPathsList->GetSelection();
+    if (itemIndex != wxNOT_FOUND){
+        // Got the selected item index
+        //remove it from the vector
+        installPaths.erase(installPaths.begin()+itemIndex);
+        
+        //update the UI
+        installsPathsList->Delete(itemIndex);
         wxCommandEvent e;
         OnSelectEditorPath(e);
-		
-		//commit to file
-		SaveEditorVersions();
-		return;
-	}
-	wxMessageBox( "You must select an install path in the list before you can remove it.", "No path selected", wxOK | wxICON_WARNING );
+        
+        //commit to file
+        SaveEditorVersions();
+        return;
+    }
+    wxMessageBox( "You must select an install path in the list before you can remove it.", "No path selected", wxOK | wxICON_WARNING );
 }
 
 /**
  Called to create a new project
  */
 void MainFrameDerived::OnCreateProject(wxCommandEvent& event){
-	//create a dialog and show it
-	if (editors.size() > 0){
-		DialogCallback d = [&](string str, project p){
-			//add the project
-			this->AddProject(p,"",true, true);
-			
-			//launch the process
-			launch_process(str);
-		};
-		CreateProjectDialogD* dialog = new CreateProjectDialogD(this,editors,d);
-		dialog->show();
-	}
-	else{
-		wxMessageBox("UnityHubNative could not find any Unity Editors installed on this sytem. If you have an editor installed, make sure UnityHubNative can find it by adding its location to the Install Search Paths section of the Editor Versions Tab.","Cannot Create Project",wxOK | wxICON_ERROR);
-	}
+    //create a dialog and show it
+    if (editors.size() > 0){
+        DialogCallback d = [&](string str, project p){
+            //add the project
+            this->AddProject(p,"",true, true);
+            
+            //launch the process
+            launch_process(str);
+        };
+        CreateProjectDialogD* dialog = new CreateProjectDialogD(this,editors,d);
+        dialog->show();
+    }
+    else{
+        wxMessageBox("UnityHubNative could not find any Unity Editors installed on this sytem. If you have an editor installed, make sure UnityHubNative can find it by adding its location to the Install Search Paths section of the Editor Versions Tab.","Cannot Create Project",wxOK | wxICON_ERROR);
+    }
 }
 
 /**
  Called when the reveal project button is clicked
  */
 void MainFrameDerived::OnRevealProject(wxCommandEvent& event){
-	long selectedIndex = wxListCtrl_get_selected(projectsList);
-	if (selectedIndex > -1){
-		long projectIndex = projectsList->GetItemData(selectedIndex);
-		project& p = projects[projectIndex];
-		reveal_in_explorer(p.path);
-	}
+    long selectedIndex = wxListCtrl_get_selected(projectsList);
+    if (selectedIndex > -1){
+        long projectIndex = projectsList->GetItemData(selectedIndex);
+        project& p = projects[projectIndex];
+        reveal_in_explorer(p.path);
+    }
 }
 
 /**
  Called when OpenWith button is pressed
  */
 void MainFrameDerived::OnOpenWith(wxCommandEvent& event){
-	long selectedIndex = wxListCtrl_get_selected(projectsList);
-	if (selectedIndex > -1){
-		long projectIndex = projectsList->GetItemData(selectedIndex);
-		project& p = projects[projectIndex];
-		OpenWithCallback c = [&](project p, editor e, TargetPlatform plat){
-			//open the project
-			OpenProject(p,e, plat);
-		};
+    long selectedIndex = wxListCtrl_get_selected(projectsList);
+    if (selectedIndex > -1){
+        long projectIndex = projectsList->GetItemData(selectedIndex);
+        project& p = projects[projectIndex];
+        OpenWithCallback c = [&](project p, editor e, TargetPlatform plat){
+            //open the project
+            OpenProject(p,e, plat);
+        };
 
-		OpenWithDlg* dlg = new OpenWithDlg(this,p,editors,c);
-		dlg->show();
-	}
+        OpenWithDlg* dlg = new OpenWithDlg(this,p,editors,c);
+        dlg->show();
+    }
 }
 
 /**
@@ -492,12 +502,12 @@ const char* const PlatToStr(TargetPlatform plat) {
  @param e the editor version to use when opening the project
  */
 void MainFrameDerived::OpenProject(const project& p, const editor& e, TargetPlatform plat){
-	string cmd = "\"" + e.executablePath().string() + "\" -projectpath \"" + p.path.string() + "\"";
+    string cmd = "\"" + e.executablePath().string() + "\" -projectpath \"" + p.path.string() + "\"";
     if (plat != TargetPlatform::CurrentPlatform) {
         auto str = PlatToStr(plat);
         cmd += std::format(" -buildTarget {}", str);
     }
-	launch_process(cmd);
+    launch_process(cmd);
 }
 
 MainFrameDerived::~MainFrameDerived()
@@ -520,14 +530,14 @@ MainFrameDerived::~MainFrameDerived()
  */
 string MainFrameDerived::GetPathFromDialog(const string& message)
 {
-	//present the dialog
-	wxDirDialog dlg(NULL, message, "", wxDD_DEFAULT_STYLE | wxDD_DIR_MUST_EXIST);
-	if (dlg.ShowModal() == wxID_CANCEL) {
-		return string("");
-	}
-	//get the path and return the standard string version
-	wxString path = dlg.GetPath();
-	return path.ToStdString();
+    //present the dialog
+    wxDirDialog dlg(NULL, message, "", wxDD_DEFAULT_STYLE | wxDD_DIR_MUST_EXIST);
+    if (dlg.ShowModal() == wxID_CANCEL) {
+        return string("");
+    }
+    //get the path and return the standard string version
+    wxString path = dlg.GetPath();
+    return path.ToStdString();
 }
 
 /**
@@ -538,35 +548,35 @@ string MainFrameDerived::GetPathFromDialog(const string& message)
  @note Surround this function in a try/catch, because it throws if it cannot succeed.
  */
 project MainFrameDerived::LoadProject(const std::filesystem::path &p_as_fs){
-	//error if the file does not exist
-	
-	
-	//the name is the final part of the path
-	string name = p_as_fs.filename().string();
-	string version = "??";
+    //error if the file does not exist
+    
+    
+    //the name is the final part of the path
+    string name = p_as_fs.filename().string();
+    string version = "??";
 
-	//Load ProjectSettings/ProjectVersion.txt to get the editor version, if it exists
-	std::filesystem::path projSettings = p_as_fs / "ProjectSettings" / "ProjectVersion.txt";
-	if (filesystem::exists(projSettings)){
-		//the first line of ProjectVersion.txt contains the editor verison as plain text
-		ifstream inFile;
-		inFile.open(projSettings);
-		getline(inFile, version);
-		version = version.substr(17);
-	}
-	
-	//get the modification date
-	int64_t modifyDate = std::numeric_limits<decltype(project::modifiedDate)>::min();
-	struct stat fileInfo {};
-	if (filesystem::exists(p_as_fs)) {
-		if (stat(p_as_fs.string().c_str(), &fileInfo) == 0) {
+    //Load ProjectSettings/ProjectVersion.txt to get the editor version, if it exists
+    std::filesystem::path projSettings = p_as_fs / "ProjectSettings" / "ProjectVersion.txt";
+    if (filesystem::exists(projSettings)){
+        //the first line of ProjectVersion.txt contains the editor verison as plain text
+        ifstream inFile;
+        inFile.open(projSettings);
+        getline(inFile, version);
+        version = version.substr(17);
+    }
+    
+    //get the modification date
+    int64_t modifyDate = std::numeric_limits<decltype(project::modifiedDate)>::min();
+    struct stat fileInfo {};
+    if (filesystem::exists(p_as_fs)) {
+        if (stat(p_as_fs.string().c_str(), &fileInfo) == 0) {
             modifyDate = fileInfo.st_mtime;
-		}
-	}
-	
-	
-	project p = {name,version,modifyDate,p_as_fs,};
-	return p;
+        }
+    }
+    
+    
+    project p = {name,version,modifyDate,p_as_fs,};
+    return p;
 }
 
 /**
@@ -574,24 +584,24 @@ project MainFrameDerived::LoadProject(const std::filesystem::path &p_as_fs){
  The file's name is projects.txt and will be created if it is not present.
  */
 void MainFrameDerived::SaveProjects(){
-	ofstream file;
-	file.open(datapath / projectsFile);
-	for (project& p : projects){
-		file << p.path.string() << endl;
-	}
-	file.close();
+    ofstream file;
+    file.open(datapath / projectsFile);
+    for (project& p : projects){
+        file << p.path.string() << endl;
+    }
+    file.close();
 }
 
 void MainFrameDerived::SaveEditorVersions(){
-	ofstream file;
-	file.open(datapath / editorPathsFile);
+    ofstream file;
+    file.open(datapath / editorPathsFile);
     if (file) {
         for (auto& p : installPaths) {
             file << p.string() << endl;
         }
         file.close();
     }
-	LoadEditorVersions();
+    LoadEditorVersions();
 }
 
 /**
@@ -600,13 +610,13 @@ void MainFrameDerived::SaveEditorVersions(){
  @note Ensure all the fields on the struct are initialized
  */
 void MainFrameDerived::AddProject(const project& p, const std::string& filter, bool select, bool save){
-	//add to the vector backing the UI
+    //add to the vector backing the UI
     if (std::find_if(projects.begin(),projects.end(),[&](const auto& item){
         return p == item;
     }) != projects.end()){
         return;
     }
-	
+    
     auto name = p.name;
     transform(name.begin(), name.end(), name.begin(), ::tolower);
     if (name.find(filter) != std::string::npos){
@@ -651,21 +661,21 @@ void MainFrameDerived::AddProject(const project& p, const std::string& filter, b
             }
         }
     }
-	
+    
 }
 
 /**
  Loads all installed editor versions from the Install Search Paths, and updates the list control
  */
 void MainFrameDerived::LoadEditorVersions(){
-	//clear list control
-	installsList->Clear();
+    //clear list control
+    installsList->Clear();
     wxCommandEvent e;
     OnSelectEditor(e);
-	editors.clear();
-	
-	//iterate over the search paths
-	for (auto& path : installPaths){
+    editors.clear();
+    
+    //iterate over the search paths
+    for (auto& path : installPaths){
         if (!std::filesystem::exists(path) || !std::filesystem::is_directory(path)){
             continue;
         }
@@ -733,7 +743,7 @@ void MainFrameDerived::LoadEditorVersions(){
             installsList->Append(a);
         }
         
-	}
+    }
 }
 
 void MainFrameDerived::OnOpenHub(wxCommandEvent &event){
@@ -745,17 +755,17 @@ void MainFrameDerived::OnOpenHub(wxCommandEvent &event){
 
 void MainFrameDerived::OnUninstall(wxCommandEvent &){
     auto selected = installsList->GetSelection();
-	if (selected != -1) {
-		const auto& editor = editors[selected];
+    if (selected != -1) {
+        const auto& editor = editors[selected];
 
 #ifdef __APPLE__
-		// delete the folder
-		wxMessageBox("Opening editor location in Finder. To uninstall an editor, simply delete its version folder.", "Notice", wxOK | wxICON_INFORMATION);
-		reveal_in_explorer(editor.path);
+        // delete the folder
+        wxMessageBox("Opening editor location in Finder. To uninstall an editor, simply delete its version folder.", "Notice", wxOK | wxICON_INFORMATION);
+        reveal_in_explorer(editor.path);
 #elif defined _WIN32
-		// execute the uninstaller
-		auto uninstaller_path = std::filesystem::path(editor.path) / "Editor\\Uninstall.exe";
-		ShellExecute(0, 0, uninstaller_path.c_str(), NULL, 0, SW_SHOW);
+        // execute the uninstaller
+        auto uninstaller_path = std::filesystem::path(editor.path) / "Editor\\Uninstall.exe";
+        ShellExecute(0, 0, uninstaller_path.c_str(), NULL, 0, SW_SHOW);
 #endif
     }
 }
