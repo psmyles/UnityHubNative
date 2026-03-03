@@ -30,6 +30,8 @@ const int TIMER_LENGTH = 5 * 1000 * 60;
 constexpr std::string_view config_name = "com.ravbug.unityhubnative.config";
 constexpr std::string_view config_sortCol = "sortColIndex";
 constexpr std::string_view config_sortAscending = "sortAscending";
+constexpr std::string_view config_windowW = "windowWidth";
+constexpr std::string_view config_windowH = "windowHeight";
 
 //Declare events here
 wxBEGIN_EVENT_TABLE(MainFrameDerived, wxFrame)
@@ -79,6 +81,13 @@ MainFrameDerived::MainFrameDerived() : MainFrame(NULL){
     wxConfig config(config_name.data());
     sortColumn = std::clamp<long>(config.ReadLong(config_sortCol.data(), 0), 0, 3);
     sortAscending = config.ReadBool(config_sortAscending.data(), false);
+    {
+        long w = config.ReadLong(config_windowW.data(), -1);
+        long h = config.ReadLong(config_windowH.data(), -1);
+        if (w > 0 && h > 0) {
+            this->SetSize(w, h);
+        }
+    }
 
 	//set up project list columns
 	{
@@ -104,6 +113,15 @@ MainFrameDerived::MainFrameDerived() : MainFrame(NULL){
 	#endif
 	if (status != 0){
 		ReloadData();
+	}
+
+	// Restore saved column widths (overrides auto-sizing done during data load)
+	for (int j = 0; j < 4; j++) {
+		auto key = std::format("colWidth{}", j);
+		long savedWidth = config.ReadLong(key.c_str(), -1);
+		if (savedWidth > 0) {
+			projectsList->SetColumnWidth(j, savedWidth);
+		}
 	}
 
 	//if no projects to load, the interface will be blank
@@ -487,6 +505,13 @@ MainFrameDerived::~MainFrameDerived()
     wxConfig config(config_name.data());
     config.Write(config_sortCol.data(), sortColumn);
     config.Write(config_sortAscending.data(), sortAscending);
+    wxSize sz = this->GetSize();
+    config.Write(config_windowW.data(), sz.GetWidth());
+    config.Write(config_windowH.data(), sz.GetHeight());
+    for (int j = 0; j < 4; j++) {
+        auto key = std::format("colWidth{}", j);
+        config.Write(key.c_str(), projectsList->GetColumnWidth(j));
+    }
 }
 
 /** Brings up a folder selection dialog with a prompt
@@ -641,6 +666,9 @@ void MainFrameDerived::LoadEditorVersions(){
 	
 	//iterate over the search paths
 	for (auto& path : installPaths){
+        if (!std::filesystem::exists(path) || !std::filesystem::is_directory(path)){
+            continue;
+        }
         //loop over the contents
         for(const auto& dir_entry : std::filesystem::directory_iterator{path}){
             auto entry = dir_entry.path();
